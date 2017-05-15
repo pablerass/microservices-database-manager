@@ -14,13 +14,14 @@ from psycopg2 import sql
 
 # TODO: Add logging
 # TODO: Split in different files
-# TODO: Complete responses content
+# TODO: Change exception management
 
 DATABASE_HOST = os.environ.get("DATABASE_HOST", "localhost")
 DATABASE_NAME = os.environ.get("DATABASE_NAME", "postgres")
 DATABASE_USER = os.environ.get("DATABASE_USER", "postgres")
 DATABASE_PASSWORD = os.environ.get("DATABASE_PASSWORD")
 DATABASE_ENCODING = os.environ.get("DATABASE_ENCODING", "UTF-8")
+
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8888"))
 
 DEFAULT_PASSWORD_LENGTH = 40
@@ -87,6 +88,7 @@ def create_customer_database(customer):
         pass
 
     return changed
+
 
 def create_customer(customer):
     """Create customer."""
@@ -156,6 +158,7 @@ def create_service_schema(service, customer=None):
 
     return changed
 
+
 def create_service(service):
     """Create service."""
     changed = False
@@ -202,7 +205,7 @@ def get_service_users(service):
     conn = __get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute('SELECT rolname AS user, rolpassword AS password ' +
-                'FROM pg_authid WHERE rolname LIKE %s', (service + '_%',))
+                'FROM pg_authid WHERE rolname LIKE %s', (service + '\_%',))
     return [dict(user) for user in cur]
 
 
@@ -215,54 +218,75 @@ class ApiHandler(tornado.web.RequestHandler):
         pass
 
 
+class CustomerCatalogHandler(tornado.web.RequestHandler):
+    """Customer catalog handler."""
+
+    def get(self):
+        """Get the list of customers."""
+        self.write(json.dumps(get_customers()))
+
+
 class CustomerHandler(tornado.web.RequestHandler):
-    """Customer Handler."""
+    """Customer handler."""
 
-    def get(self, customer=None):
-        """Generate response with the list of customers."""
-        if customer is None:
-            self.write(json.dumps(get_customers()))
-        else:
-            try:
-                self.write(self.__get_customer_content(customer))
-            except:
-                raise tornado.web.HTTPError(404)
+    def get(self, customer):
+        """Get customer information."""
+        try:
+            self.write(self.__get_customer_content(customer))
+        except:
+            raise tornado.web.HTTPError(404)
 
-    def put(self, customer=None):
-        """Generate response with the list of customers."""
-        if customer is None:
-            raise tornado.web.HTTPError(501)
+    def put(self, customer):
+        """Add a new customer."""
         if create_customer(customer):
             self.set_status(201)
         self.write(self.__get_customer_content(customer))
 
     def __get_customer_content(self, customer):
-        return json.dumps({"services": get_services(customer)})
+        content = {
+            "services": get_services(customer),
+            "database": CUSTOMER_PREFIX + customer
+        }
+
+        return json.dumps(content)
+
+
+class ServiceCatalogHandler(tornado.web.RequestHandler):
+    """Service catalog handler."""
+
+    def get(self):
+        """Get the list of services."""
+        self.write(json.dumps(get_services()))
 
 
 class ServiceHandler(tornado.web.RequestHandler):
     """Service Handler."""
 
-    def get(self, service=None):
-        """Generate response with the list of services."""
-        if service is None:
-            self.write(json.dumps(get_services()))
+    def get(self, service):
+        """Get service conection parameters."""
+        if service not in get_services():
+            raise tornado.web.HTTPError(404)
         else:
-            if service not in get_services():
-                raise tornado.web.HTTPError(404)
-            else:
-                self.write(self.__get_service_content(service))
+            self.write(self.__get_service_content(service))
 
     def put(self, service=None):
-        """Generate response with the list of customers."""
-        if service is None:
-            raise tornado.web.HTTPError(501)
+        """Add a new service."""
         if create_service(service):
             self.set_status(201)
         self.write(self.__get_service_content(service))
 
     def __get_service_content(self, service):
-        return json.dumps({"users": get_service_users(service)})
+        users = get_service_users(service)
+
+        content = {
+            "schema": SERVICE_PREFIX + service,
+            "users": {
+                "owner": [ x for x in users if x['user'].endswith('_owner')][0],
+                "oltp": [ x for x in users if x['user'].endswith('_oltp')][0]
+            }
+        }
+
+        return json.dumps(content)
 
 
 class VersionHandler(tornado.web.RequestHandler):
@@ -276,9 +300,9 @@ class VersionHandler(tornado.web.RequestHandler):
 # Application
 HANDLERS = [
     (r"/", ApiHandler),
-    (r"/customers/?", CustomerHandler),
+    (r"/customers/?", CustomerCatalogHandler),
     (r"/customers/(?P<customer>\d+)", CustomerHandler),
-    (r"/services/?", ServiceHandler),
+    (r"/services/?", ServiceCatalogHandler),
     (r"/services/(?P<service>.+)", ServiceHandler),
     (r"/version", VersionHandler),
 ]
