@@ -1,0 +1,19 @@
+version: "2"
+
+services:
+  database_manager:
+    build: .
+    image: database_manager:1.0
+    ports:
+      - "80:8888"
+    environment:
+      - DATABASE_HOST=postgres
+      - DATABASE_USER=postgres
+      - DATABASE_PASS=postgres
+
+  postgres:
+    image: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=postgres
