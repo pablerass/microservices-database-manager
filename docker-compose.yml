@@ -3,13 +3,13 @@ version: "2"
 services:
   database_manager:
     build: .
-    image: database_manager:1.0
+    image: pablerass/microservices-database-manager:latest
     ports:
-      - "80:8888"
+      - "8888:8888"
     environment:
       - DATABASE_HOST=postgres
       - DATABASE_USER=postgres
-      - DATABASE_PASS=postgres
+      - DATABASE_PASSWORD=postgres
 
   postgres:
     image: postgres
