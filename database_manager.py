@@ -80,12 +80,12 @@ def create_customer_database(customer):
     changed = False
     try:
         cur.execute(
-            sql.SQL('CREATE DATABASE {} ENCODING %s')
-            .format(sql.Identifier(CUSTOMER_PREFIX + customer)),
+            sql.SQL('CREATE DATABASE {database} ENCODING %s')
+            .format(database=sql.Identifier(CUSTOMER_PREFIX + customer)),
             (DATABASE_ENCODING,))
         changed = True
-    except:
-        pass
+    except Exception as e:
+        raise e
 
     return changed
 
@@ -131,30 +131,30 @@ def create_service_schema(service, customer=None):
 
     try:
         cur.execute(
-            sql.SQL('CREATE SCHEMA {} AUTHORIZATION {}')
-            .format(sql.Identifier(SERVICE_PREFIX + service),
-                    sql.Identifier(service + '_owner')))
+            sql.SQL('CREATE SCHEMA {schema} AUTHORIZATION {owner_user}')
+            .format(schema=sql.Identifier(SERVICE_PREFIX + service),
+                    owner_user=sql.Identifier(service + '_owner')))
         changed = True
-    except:
+    except Exception as e:
         pass
 
     try:
         cur.execute(
-            sql.SQL('GRANT USAGE ON SCHEMA {} TO {}')
-            .format(sql.Identifier(SERVICE_PREFIX + service),
-                    sql.Identifier(service + '_oltp')))
-    except:
-        pass
+            sql.SQL('GRANT USAGE ON SCHEMA {schema} TO {oltp_user}')
+            .format(schema=sql.Identifier(SERVICE_PREFIX + service),
+                    oltp_user=sql.Identifier(service + '_oltp')))
+    except Exception as e:
+        raise e
 
     try:
         cur.execute(
-            sql.SQL('ALTER DEFAULT PRIVILEGES IN SCHEMA {} ' +
-                    'FOR USER {} GRANT ALL ON TABLES TO {}')
-            .format(sql.Identifier(SERVICE_PREFIX + service),
-                    sql.Identifier(service + '_oltp'),
-                    sql.Identifier(service + '_owner')))
-    except:
-        pass
+            sql.SQL('ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} ' +
+                    'FOR USER {owner_user} GRANT ALL ON TABLES TO {oltp_user}')
+            .format(schema=sql.Identifier(SERVICE_PREFIX + service),
+                    owner_user=sql.Identifier(service + '_owner'),
+                    oltp_user=sql.Identifier(service + '_oltp')))
+    except Exception as e:
+        raise e
 
     return changed
 
@@ -181,20 +181,28 @@ def create_service_users(service):
     cur = conn.cursor()
     try:
         cur.execute(
-            sql.SQL('CREATE USER {} WITH UNENCRYPTED PASSWORD %s')
-            .format(sql.Identifier(service + '_owner')),
+            sql.SQL('CREATE USER {owner_user} WITH UNENCRYPTED PASSWORD %s')
+            .format(owner_user=sql.Identifier(service + '_owner')),
             (__create_random_password(),))
         changed = True
-    except:
+    except Exception as e:
         pass
 
     try:
         cur.execute(
-            sql.SQL('CREATE USER {} WITH UNENCRYPTED PASSWORD %s')
-            .format(sql.Identifier(service + '_oltp')),
+            sql.SQL('GRANT {owner_user} TO {admin_user}')
+            .format(owner_user=sql.Identifier(service + '_owner'),
+                    admin_user=sql.Identifier(DATABASE_USER)))
+    except Exception as e:
+        raise e
+
+    try:
+        cur.execute(
+            sql.SQL('CREATE USER {oltp_user} WITH UNENCRYPTED PASSWORD %s')
+            .format(oltp_user=sql.Identifier(service + '_oltp')),
             (__create_random_password(),))
         changed = True
-    except:
+    except Exception as e:
         pass
 
     return changed
@@ -205,7 +213,7 @@ def get_service_users(service):
     conn = __get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute('SELECT rolname AS user, rolpassword AS password ' +
-                'FROM pg_authid WHERE rolname LIKE %s', (service + '\_%',))
+                'FROM pg_shadow WHERE rolname LIKE %s', (service + '\_%',))
     return [dict(user) for user in cur]
 
 
@@ -281,8 +289,8 @@ class ServiceHandler(tornado.web.RequestHandler):
         content = {
             "schema": SERVICE_PREFIX + service,
             "users": {
-                "owner": [ x for x in users if x['user'].endswith('_owner')][0],
-                "oltp": [ x for x in users if x['user'].endswith('_oltp')][0]
+                "owner": [x for x in users if x['user'].endswith('_owner')][0],
+                "oltp": [x for x in users if x['user'].endswith('_oltp')][0]
             }
         }
 
