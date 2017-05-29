@@ -203,6 +203,6 @@ def get_service_users(service):
     """Get service users."""
     conn = __get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute('SELECT rolname AS user, rolpassword AS password ' +
-                'FROM pg_shadow WHERE rolname LIKE %s', (service + '\_%',))
+    cur.execute('SELECT usename AS user, passwd AS password ' +
+                'FROM pg_shadow WHERE usename LIKE %s', (service + '\_%',))
     return [dict(user) for user in cur]
