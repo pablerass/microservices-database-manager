@@ -1,6 +1,8 @@
 FROM python:3-onbuild
 
-EXPOSE 80
+ENV LISTEN_PORT=8888
 
-CMD [ "python", "./database_manager.py" ]
+EXPOSE $LISTEN_PORT
+
+CMD [ "python", "./database_manager" ]
 

@@ -1,14 +1,9 @@
-#!/usr/bin/env python
 """Multicustomer microservice database manager."""
-import json
 import os
 import psycopg2
 import psycopg2.extras
 import random
 import string
-import sys
-import tornado.ioloop
-import tornado.web
 
 from psycopg2 import sql
 
@@ -22,13 +17,9 @@ DATABASE_USER = os.environ.get("DATABASE_USER", "postgres")
 DATABASE_PASSWORD = os.environ.get("DATABASE_PASSWORD")
 DATABASE_ENCODING = os.environ.get("DATABASE_ENCODING", "UTF-8")
 
-LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8888"))
-
 DEFAULT_PASSWORD_LENGTH = 40
 CUSTOMER_PREFIX = os.environ.get("CUSTOMER_PREFIX", "customer_")
 SERVICE_PREFIX = os.environ.get("SERVICE_PREFIX", "service_")
-
-__version__ = '1.0'
 
 
 # Connection management
@@ -215,120 +206,3 @@ def get_service_users(service):
     cur.execute('SELECT rolname AS user, rolpassword AS password ' +
                 'FROM pg_shadow WHERE rolname LIKE %s', (service + '\_%',))
     return [dict(user) for user in cur]
-
-
-# Handlers
-class ApiHandler(tornado.web.RequestHandler):
-    """Empty handler."""
-
-    def get(self):
-        """Generate an empty response."""
-        pass
-
-
-class CustomerCatalogHandler(tornado.web.RequestHandler):
-    """Customer catalog handler."""
-
-    def get(self):
-        """Get the list of customers."""
-        self.write(json.dumps(get_customers()))
-
-
-class CustomerHandler(tornado.web.RequestHandler):
-    """Customer handler."""
-
-    def get(self, customer):
-        """Get customer information."""
-        try:
-            self.write(self.__get_customer_content(customer))
-        except:
-            raise tornado.web.HTTPError(404)
-
-    def put(self, customer):
-        """Add a new customer."""
-        if create_customer(customer):
-            self.set_status(201)
-        self.write(self.__get_customer_content(customer))
-
-    def __get_customer_content(self, customer):
-        content = {
-            "services": get_services(customer),
-            "database": CUSTOMER_PREFIX + customer
-        }
-
-        return json.dumps(content)
-
-
-class ServiceCatalogHandler(tornado.web.RequestHandler):
-    """Service catalog handler."""
-
-    def get(self):
-        """Get the list of services."""
-        self.write(json.dumps(get_services()))
-
-
-class ServiceHandler(tornado.web.RequestHandler):
-    """Service Handler."""
-
-    def get(self, service):
-        """Get service conection parameters."""
-        if service not in get_services():
-            raise tornado.web.HTTPError(404)
-        else:
-            self.write(self.__get_service_content(service))
-
-    def put(self, service=None):
-        """Add a new service."""
-        if create_service(service):
-            self.set_status(201)
-        self.write(self.__get_service_content(service))
-
-    def __get_service_content(self, service):
-        users = get_service_users(service)
-
-        content = {
-            "schema": SERVICE_PREFIX + service,
-            "users": {
-                "owner": [x for x in users if x['user'].endswith('_owner')][0],
-                "oltp": [x for x in users if x['user'].endswith('_oltp')][0]
-            }
-        }
-
-        return json.dumps(content)
-
-
-class VersionHandler(tornado.web.RequestHandler):
-    """API version Handler."""
-
-    def get(self):
-        """Print API version."""
-        self.write(__version__)
-
-
-# Application
-HANDLERS = [
-    (r"/", ApiHandler),
-    (r"/customers/?", CustomerCatalogHandler),
-    (r"/customers/(?P<customer>\d+)", CustomerHandler),
-    (r"/services/?", ServiceCatalogHandler),
-    (r"/services/(?P<service>.+)", ServiceHandler),
-    (r"/version", VersionHandler),
-]
-
-
-def application():
-    """Application."""
-    return tornado.web.Application(HANDLERS)
-
-
-def main(argv=None):
-    """Main function."""
-    app = application()
-    port = LISTEN_PORT
-    app.listen(port)
-    tornado.ioloop.IOLoop.current().start()
-
-
-# Main
-if (__name__ == "__main__"):
-    sys.exit(main(sys.argv))
